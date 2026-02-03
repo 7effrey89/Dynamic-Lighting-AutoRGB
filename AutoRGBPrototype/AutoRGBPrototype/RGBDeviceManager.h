@@ -57,15 +57,7 @@ public:
 
 	void ChangeColor(uint8_t r, uint8_t g, uint8_t b);
 
-	// New methods for per-lamp control on selected device
-	void SetLampColors(const std::vector<RGBColor>& colors);
-	std::wstring GetSelectedDeviceId() const { return m_selectedDeviceId; }
-	int GetSelectedDeviceLampCount() const;
-
 private:
-	void SelectFirstDevice();
-	void SelectNextAvailableDevice();
-
 	Microsoft::WRL::ComPtr<ABI::Windows::Devices::Enumeration::IDeviceInformationStatics> m_deviceInfoStatics;
 	Microsoft::WRL::ComPtr<ABI::Windows::Devices::Lights::ILampArrayStatics> m_lampArrayStatics;
 	Microsoft::WRL::ComPtr<ABI::Windows::Devices::Lights::Effects::ILampArrayCustomEffectFactory> m_effectFactory;
@@ -77,9 +69,6 @@ private:
 
 	std::map<std::wstring, LightingDevice> m_lightingDevices;
 	Microsoft::WRL::ComPtr<ABI::Windows::Devices::Enumeration::IDeviceWatcher> m_deviceWatcher;
-
-	// Selected device for zone-based control
-	std::wstring m_selectedDeviceId;
 };
 
 

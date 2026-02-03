@@ -5,14 +5,9 @@
 
 #include "ShaderDefines.h"
 #include "ColorAlgorithm.h"
-#include "ZoneConfiguration.h"
-#include "ZoneLayout.h"
-#include "ZoneColorExtractor.h"
-#include "ZoneColorSmoother.h"
 
 #include <Vector3.h>
 #include <future>
-#include <chrono>
 
 namespace winrt::AutoRGBPrototype::implementation
 {
@@ -71,29 +66,11 @@ namespace winrt::AutoRGBPrototype::implementation
 
         // Predominant color calculator
         ColorAlgorithm m_colorAlgorithm;
-
-        // Zone-based capture
-        ZoneConfiguration m_zoneConfig;
-        ZoneLayout m_zoneLayout;
-        ZoneColorExtractor m_zoneColorExtractor;
-        ZoneColorSmoother m_zoneColorSmoother;
-        bool m_useZoneCapture = true;
-
-        // FPS throttling
-        std::chrono::steady_clock::time_point m_lastFrameTime;
-        std::chrono::milliseconds m_frameInterval{ 33 }; // ~30 FPS default
     };
 
     struct CaptureTakenEventArgs : CaptureTakenEventArgsT<CaptureTakenEventArgs>
     {
-        CaptureTakenEventArgs(uint8_t r, uint8_t g, uint8_t b) : m_R(r), m_G(g), m_B(b), m_zoneCount(0)
-        {
-        }
-
-        CaptureTakenEventArgs(uint8_t r, uint8_t g, uint8_t b, 
-            winrt::Windows::Foundation::Collections::IVector<uint8_t> zoneColorsFlat,
-            int32_t zoneCount)
-            : m_R(r), m_G(g), m_B(b), m_zoneColorsFlat(zoneColorsFlat), m_zoneCount(zoneCount)
+        CaptureTakenEventArgs(uint8_t r, uint8_t g, uint8_t b) : m_R(r), m_G(g), m_B(b)
         {
         }
 
@@ -112,22 +89,10 @@ namespace winrt::AutoRGBPrototype::implementation
             return m_B;
         }
 
-        winrt::Windows::Foundation::Collections::IVector<uint8_t> ZoneColorsFlat()
-        {
-            return m_zoneColorsFlat;
-        }
-
-        int32_t ZoneCount()
-        {
-            return m_zoneCount;
-        }
-
     private:
         uint8_t m_R;
         uint8_t m_G;
         uint8_t m_B;
-        winrt::Windows::Foundation::Collections::IVector<uint8_t> m_zoneColorsFlat{ nullptr };
-        int32_t m_zoneCount;
     };
 
     // This struct is needed to pass in information about the monitor size to the shader

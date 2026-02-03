@@ -4,118 +4,70 @@
 
 ### Description
 
-This sample demonstrates how to extract zone-based ambient colors from a desktop 
-screen edge and use them to illuminate individual LED lamps on a connected RGB 
-device that fits the HID standard via the Windows.Devices.Lights API. The app 
-uses an ambilight-style approach, sampling colors from thin bands along the screen 
-edges and mapping them to individual lamps for an immersive lighting experience.
-
+This sample demonstrates how to extract a single, representative ambient 
+color from a desktop screen and use it to illuminate LED lamps on connected
+RGB devices that fit the HID standard via the Windows.Devices.Lights API. 
 This sample requires the C++/WinRT, Windows App SDK, WinUI, and Windows 
 Implementation Library packages. 
 
 ### Building the Sample
-
-#### Automated Builds (CI/CD)
-Pre-built executables are automatically compiled for every commit and can be downloaded from the [GitHub Actions](https://github.com/7effrey89/Dynamic-Lighting-AutoRGB/actions) page. Available platforms: x64, x86, and arm64.
-
-#### Manual Build
 Deploy the app. Click on the "Capture screen" button to begin the screen
-capture that calculates the zone-based ambient colors to display. Watch your 
-lighting device illuminate with colors that match the edges of your screen! 
-Try it on videos, games, and more. The app will display the calculated average 
-color as well.
-
-**Note:** The sample app captures the monitor with the active window. If using 
-a multi-monitor setup, the active window's monitor will be captured.
-
-### Zone-Based Ambilight Capture
-
-The app divides the screen edges into configurable zones and samples the average 
-color from each zone. By default, the configuration is:
-- **Top edge**: 6 zones (left to right)
-- **Left edge**: 4 zones (bottom to top)
-- **Right edge**: 4 zones (top to bottom)
-- **Bottom edge**: 0 zones (disabled)
-
-This creates 14 total zones arranged in a clockwise pattern around the screen 
-perimeter, providing an ambilight-like effect.
-
-#### Zone Ordering
-Zones are ordered clockwise starting from the top-left:
-1. **Top edge zones**: ordered left to right
-2. **Right edge zones**: ordered top to bottom
-3. **Bottom edge zones**: ordered right to left (if enabled)
-4. **Left edge zones**: ordered bottom to top
-
-#### Configuration Options
-The zone capture can be customized via the `ZoneConfiguration` class:
-
-- **Zone counts per edge**: `topZoneCount`, `leftZoneCount`, `rightZoneCount`, `bottomZoneCount`
-  - Default: 6, 4, 4, 0 respectively
-  
-- **Edge thickness**: `edgeThicknessPercent`
-  - Default: 0.03 (3% of screen dimension)
-  - Controls how far from the edge to sample
-  
-- **Target FPS**: `targetFPS`
-  - Default: 30 FPS
-  - Throttles processing to maintain stable performance
-  
-- **Smoothing**: `smoothingAlpha`, `smoothingEnabled`
-  - Default: alpha = 0.3, enabled = true
-  - Uses exponential moving average to reduce flicker
-  - Formula: `smoothed = prev + alpha * (current - prev)`
-  - Lower alpha = smoother but slower response
-
-### Device Selection and Per-Lamp Control
-
-The app automatically selects the first discovered LampArray device and sets 
-individual lamp colors based on the zone colors:
-
-- **Auto-selection**: The first LampArray device found is automatically selected
-- **Per-lamp mapping**: Zone colors are mapped to lamp indices (1:1 up to `min(zoneCount, lampCount)`)
-- **Device removal handling**: If the selected device is removed, the app automatically selects the next available device
+capture that calculates the ambient color to display. Watch your 
+lighting devices illuminate with the ambient color! Try it on videos,
+games, and more. The app will display the calculated color as well. Note
+that if you are using a multi-monitor setup, the monitor with the active
+window will be the one captured. Note that the sample app has to be in
+foreground in order for it to work. 
 
 ### Implementation Notes
-There are 4 main components to this sample: screen capture, zone color extraction, 
-color smoothing, and RGB device manager. 
+There are 4 main components to this sample: screen capture, compute shader,
+ambient color algorithm, and RGB device manager. 
 
 ##### Screen Capture
-The screen capture is done via the Windows.Graphics.Capture API using D3D11. 
-The monitor that contains the active window is the screen that will be captured. 
-A screen capture is taken whenever a change is detected on the monitor display 
-(e.g. resizing a window, video frame changes). This code is part of the 
-GraphicsManager class. 
+The screen capture is done via the Windows.Graphics.Capture API. We use
+D3D11 in this sample. The monitor that contains the active window is the
+screen that will be captured. A screen capture is taken whenever a change
+is detected on the monitor display (e.g. resizing a window). This code
+is part of the GraphicsManager class. 
 
-##### Zone Color Extraction
-The `ZoneColorExtractor` samples the average color from each defined zone using 
-CPU-based texture readback. For performance, it samples every 4th pixel within 
-each zone. The `ZoneLayout` class generates normalized rectangular zones based 
-on the configuration.
+##### Compute Shader
+We convert the capture to a 2D texture to input into a compute shader. 
+The compute shader's purpose is to create 3 histograms - one for each of
+the R, G, and B color spaces. The shader analyzes each pixel of the texture
+and plots its R value on the R histogram, its G value on the G histogram, 
+and its B value on the B histogram. Each histogram has 8 buckets, so pixels 
+are plotted into 1 of 8 buckets based on its value: 0-31, 32-63,..., 224-255. 
+This code is located in 2 files: Color.hlsl and the GraphicsManager class. 
+The GraphicsManager class runs the shader whenever a capture is taken. 
 
-##### Color Smoothing
-The `ZoneColorSmoother` applies exponential moving average smoothing to each 
-zone's color independently. This reduces flickering and creates a more pleasant 
-visual effect. Smoothing can be disabled or tuned via the configuration.
+##### Ambient Color Algorithm
+The ambient color algorithm calculates the most predominant color on the
+screen by analyzing the R, G, and B histograms output by the shader. The
+algorithm looks at 2 color heuristics: top X buckets and weighted average. 
+
+1. Top X Buckets: To calculate this heuristic, we start by looking at the 
+highest bucket of each of the three histograms. If the number of pixels in 
+this bucket surpasses a set threshold, then only this bin will be used to 
+calculate the ambient color. If not, then the next bin is added and so on 
+until we meet the threshold. The idea of this heuristic is to give more 
+weight to the colors that have higher intensity pixels while also adapatively 
+changing the number of bins to account for the pixel count. 
+
+2. Weighted Average: This heuristic takes the weighted average of the 3 
+histograms and normalizes the result. It gives similar results for well-lit
+scenes but exaggerates colors on dimmer, darker scenes. 
+
+To calculate the ambient color, we look at the color produced by both of 
+the above heuristics and then calculate a color that is in-between the 2. 
+When the ambient color is calculated, we raise an event that the MainWindow
+class subscribes to. When the MainWindow class receives this event, it
+updates the color shown on the app window and on all connected RGB devices.
 
 ##### RGB Device Manager
-The `RGBDeviceManager` class listens for when HID-compliant LampArray devices 
-are added or removed. It automatically selects the first device and uses 
-`SetColorForIndex()` to set individual lamp colors. When the MainWindow class 
-receives zone colors from the GraphicsManager, it passes them to the 
-RGBDeviceManager to update the selected device.
-
-##### FPS Throttling
-The GraphicsManager throttles frame processing to the target FPS (default 30) 
-to maintain stable performance and reduce CPU/GPU load. Frames are skipped if 
-insufficient time has passed since the last processed frame.
-
-### Backward Compatibility
-
-The app maintains backward compatibility with single-color mode. The 
-`CaptureTakenEventArgs` includes both individual zone colors and an average 
-color calculated from all zones. The original histogram-based color algorithm 
-is still available (set `m_useZoneCapture = false` in GraphicsManager).
+The RGBDeviceManager class listens for when a HID-compliant device is 
+added or removed and controls the colors shown on the devices. The MainWindow
+class maintains an instance of the RGBDeviceManager and instructs it to change
+the color on all connected devices whenever the event is raised.
 
 ### Additional Notes
 This sample was created in collaboration with the Xbox team. 
@@ -131,4 +83,5 @@ Learn more about Windows.Devices.Lights here:
 https://learn.microsoft.com/en-us/uwp/api/windows.devices.lights?view=winrt-22621
 Learn more about Windows.Graphics.Capture here:
 https://learn.microsoft.com/en-us/windows/uwp/audio-video-camera/screen-capture
-
+Learn more about compute shaders here: 
+https://learn.microsoft.com/en-us/windows/win32/direct3d11/direct3d-11-advanced-stages-compute-shader

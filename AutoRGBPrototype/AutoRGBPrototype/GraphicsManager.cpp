@@ -4,6 +4,7 @@
 #include "GraphicsManager.g.cpp"
 #endif
 
+#include "pch.h"
 #include "ColorShader.h"
 
 #include <ppltasks.h>
@@ -29,14 +30,6 @@ namespace winrt::AutoRGBPrototype::implementation
         CreateShaderResources();
 
         m_colorAlgorithm.Initialize(m_numPixels);
-
-        // Initialize zone-based capture
-        m_zoneLayout.GenerateZones(m_zoneConfig);
-        m_zoneColorSmoother.Initialize(m_zoneConfig.GetTotalZoneCount());
-
-        // Set up FPS throttling
-        m_frameInterval = std::chrono::milliseconds(1000 / m_zoneConfig.targetFPS);
-        m_lastFrameTime = std::chrono::steady_clock::now();
     }
 
     // Get information on the user's active monitor
@@ -213,100 +206,46 @@ namespace winrt::AutoRGBPrototype::implementation
     // The compute shader iterates through each pixel in the screen capture and bins its R, G, and B value into each histogram
     void GraphicsManager::RunShader()
     {
-        // FPS throttling - check if enough time has passed
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_lastFrameTime);
-        if (elapsed < m_frameInterval)
+        // Clear the output buffer
         {
-            // Not enough time has passed, skip this frame
-            return;
+            D3D11_BUFFER_DESC desc = {};
+            m_outputBuffer->GetDesc(&desc);
+            desc.BindFlags = 0;
+            desc.MiscFlags = 0;
+            winrt::com_ptr<ID3D11Buffer> clearOutputBuffer;
+
+            winrt::check_hresult(m_d3dDevice->CreateBuffer(&desc, nullptr, clearOutputBuffer.put()));
+            m_d3dDeviceContext->CopyResource(m_outputBuffer.get(), clearOutputBuffer.get());
         }
-        m_lastFrameTime = now;
 
-        if (m_useZoneCapture)
-        {
-            // Zone-based capture
-            auto rawZoneColors = m_zoneColorExtractor.ExtractZoneColors(
-                m_d3dDeviceContext.get(),
-                m_captureTexture.get(),
-                m_zoneLayout.GetZones(),
-                m_width,
-                m_height);
+        // Set all the shader resources
+        m_d3dDeviceContext->CSSetShader(m_shader.get(), nullptr, 0);
+        std::vector<ID3D11ShaderResourceView*> srvs = { m_captureSrv.get() };
+        m_d3dDeviceContext->CSSetShaderResources(0, static_cast<uint32_t>(srvs.size()), srvs.data());
+        std::vector<ID3D11Buffer*> constants = { m_constantBuffer.get() };
+        m_d3dDeviceContext->CSSetConstantBuffers(0, static_cast<uint32_t>(constants.size()), constants.data());
+        std::vector<ID3D11UnorderedAccessView*> uavs = { m_outputUav.get() };
+        m_d3dDeviceContext->CSSetUnorderedAccessViews(0, static_cast<uint32_t>(uavs.size()), uavs.data(), nullptr);
 
-            // Apply smoothing
-            auto smoothedZoneColors = m_zoneColorSmoother.SmoothColors(
-                rawZoneColors,
-                m_zoneConfig.smoothingAlpha,
-                m_zoneConfig.smoothingEnabled);
+        // Run the shader
+        m_d3dDeviceContext->Dispatch(m_height, 1, 1);
 
-            // Calculate average color for backward compatibility
-            uint64_t totalR = 0, totalG = 0, totalB = 0;
-            for (const auto& color : smoothedZoneColors)
-            {
-                totalR += color.r;
-                totalG += color.g;
-                totalB += color.b;
-            }
-            uint8_t avgR = smoothedZoneColors.empty() ? 0 : static_cast<uint8_t>(totalR / smoothedZoneColors.size());
-            uint8_t avgG = smoothedZoneColors.empty() ? 0 : static_cast<uint8_t>(totalG / smoothedZoneColors.size());
-            uint8_t avgB = smoothedZoneColors.empty() ? 0 : static_cast<uint8_t>(totalB / smoothedZoneColors.size());
+        // Extract the histogram data returned from the shader
+        m_d3dDeviceContext->CopyResource(m_readbackBuffer.get(), m_outputBuffer.get());
+        D3D11_MAPPED_SUBRESOURCE msr = {};
+        winrt::check_hresult(m_d3dDeviceContext->Map(m_readbackBuffer.get(), 0, D3D11_MAP_READ, 0, &msr));
 
-            // Convert to WinRT flat vector [R0,G0,B0, R1,G1,B1, ...]
-            auto zoneColorsFlat = winrt::single_threaded_vector<uint8_t>();
-            for (const auto& color : smoothedZoneColors)
-            {
-                zoneColorsFlat.Append(static_cast<uint8_t>(color.r));
-                zoneColorsFlat.Append(static_cast<uint8_t>(color.g));
-                zoneColorsFlat.Append(static_cast<uint8_t>(color.b));
-            }
+        auto shaderOutput = reinterpret_cast<uint32_t*>(msr.pData);
 
-            auto captureTakenEventArgs = make_self<CaptureTakenEventArgs>(avgR, avgG, avgB, zoneColorsFlat, static_cast<int32_t>(smoothedZoneColors.size()));
-            m_captureTaken(*this, *captureTakenEventArgs);
-        }
-        else
-        {
-            // Original single-color capture using histogram
-            // Clear the output buffer
-            {
-                D3D11_BUFFER_DESC desc = {};
-                m_outputBuffer->GetDesc(&desc);
-                desc.BindFlags = 0;
-                desc.MiscFlags = 0;
-                winrt::com_ptr<ID3D11Buffer> clearOutputBuffer;
+        auto color = m_colorAlgorithm.CalculatePredominantColor(shaderOutput);
+        uint8_t r = static_cast<uint8_t>(color.x * 255);
+        uint8_t g = static_cast<uint8_t>(color.y * 255);
+        uint8_t b = static_cast<uint8_t>(color.z * 255);
 
-                winrt::check_hresult(m_d3dDevice->CreateBuffer(&desc, nullptr, clearOutputBuffer.put()));
-                m_d3dDeviceContext->CopyResource(m_outputBuffer.get(), clearOutputBuffer.get());
-            }
+        auto captureTakenEventArgs = make_self<CaptureTakenEventArgs>(r, g, b);
+        m_captureTaken(*this, *captureTakenEventArgs);
 
-            // Set all the shader resources
-            m_d3dDeviceContext->CSSetShader(m_shader.get(), nullptr, 0);
-            std::vector<ID3D11ShaderResourceView*> srvs = { m_captureSrv.get() };
-            m_d3dDeviceContext->CSSetShaderResources(0, static_cast<uint32_t>(srvs.size()), srvs.data());
-            std::vector<ID3D11Buffer*> constants = { m_constantBuffer.get() };
-            m_d3dDeviceContext->CSSetConstantBuffers(0, static_cast<uint32_t>(constants.size()), constants.data());
-            std::vector<ID3D11UnorderedAccessView*> uavs = { m_outputUav.get() };
-            m_d3dDeviceContext->CSSetUnorderedAccessViews(0, static_cast<uint32_t>(uavs.size()), uavs.data(), nullptr);
-
-            // Run the shader
-            m_d3dDeviceContext->Dispatch(m_height, 1, 1);
-
-            // Extract the histogram data returned from the shader
-            m_d3dDeviceContext->CopyResource(m_readbackBuffer.get(), m_outputBuffer.get());
-            D3D11_MAPPED_SUBRESOURCE msr = {};
-            winrt::check_hresult(m_d3dDeviceContext->Map(m_readbackBuffer.get(), 0, D3D11_MAP_READ, 0, &msr));
-
-            auto shaderOutput = reinterpret_cast<uint32_t*>(msr.pData);
-
-            auto color = m_colorAlgorithm.CalculatePredominantColor(shaderOutput);
-            uint8_t r = static_cast<uint8_t>(color.x * 255);
-            uint8_t g = static_cast<uint8_t>(color.y * 255);
-            uint8_t b = static_cast<uint8_t>(color.z * 255);
-
-            auto captureTakenEventArgs = make_self<CaptureTakenEventArgs>(r, g, b);
-            m_captureTaken(*this, *captureTakenEventArgs);
-
-            m_d3dDeviceContext->Unmap(m_readbackBuffer.get(), 0);
-        }
+        m_d3dDeviceContext->Unmap(m_readbackBuffer.get(), 0);
     }
 
     winrt::event_token GraphicsManager::CaptureTaken(winrt::TypedEventHandler<AutoRGBPrototype::GraphicsManager, AutoRGBPrototype::CaptureTakenEventArgs> const& handler)
