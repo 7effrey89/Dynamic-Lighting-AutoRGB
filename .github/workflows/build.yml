@@ -86,6 +86,24 @@ jobs:
         echo "CERT_PATH=$certPath" >> $env:GITHUB_ENV
         echo "CERT_PASSWORD=${{ secrets.WINDOWS_PFX_PASSWORD }}" >> $env:GITHUB_ENV
         
+        # Export public certificate (.cer) for distribution with artifacts
+        Write-Host "Exporting public certificate..."
+        $securePwd = ConvertTo-SecureString -String "${{ secrets.WINDOWS_PFX_PASSWORD }}" -Force -AsPlainText
+        
+        # Import PFX to temporary certificate store
+        $cert = Import-PfxCertificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\My -Password $securePwd -Exportable
+        
+        # Export public certificate to .cer file in $RUNNER_TEMP
+        $cerPath = Join-Path $env:RUNNER_TEMP "AutoRGBPrototypeDev.cer"
+        Export-Certificate -Cert $cert -FilePath $cerPath -Type CERT | Out-Null
+        Write-Host "Public certificate exported to: $cerPath"
+        
+        # Remove certificate from temporary store
+        Remove-Item -Path "Cert:\CurrentUser\My\$($cert.Thumbprint)" -Force
+        Write-Host "Certificate removed from temporary store."
+        
+        echo "CER_PATH=$cerPath" >> $env:GITHUB_ENV
+        
     - name: Sign MSIX packages
       if: ${{ secrets.WINDOWS_PFX_BASE64 != '' && secrets.WINDOWS_PFX_PASSWORD != '' }}
       shell: pwsh
@@ -151,6 +169,10 @@ jobs:
           Remove-Item -Path $env:CERT_PATH -Force -ErrorAction SilentlyContinue
           Write-Host "Certificate file cleaned up."
         }
+        if ($env:CER_PATH -and (Test-Path $env:CER_PATH)) {
+          Remove-Item -Path $env:CER_PATH -Force -ErrorAction SilentlyContinue
+          Write-Host "Public certificate file cleaned up."
+        }
         
     - name: Skip signing notice
       if: ${{ secrets.WINDOWS_PFX_BASE64 == '' || secrets.WINDOWS_PFX_PASSWORD == '' }}
@@ -163,6 +185,26 @@ jobs:
         Write-Host "The generated .msix packages will not be signed."
         Write-Host "To enable signing, add the required secrets to your repository settings."
         Write-Host "=========================================="
+      
+    - name: Copy public certificate to artifact directories
+      if: ${{ secrets.WINDOWS_PFX_BASE64 != '' && secrets.WINDOWS_PFX_PASSWORD != '' }}
+      shell: pwsh
+      run: |
+        if ($env:CER_PATH -and (Test-Path $env:CER_PATH)) {
+          Write-Host "Copying public certificate to artifact directories..."
+          
+          # Copy to AppPackages directory if it exists
+          if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages") {
+            Copy-Item $env:CER_PATH "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages/" -Force
+            Write-Host "Certificate copied to AppPackages directory."
+          }
+          
+          # Copy to platform-specific directory if it exists
+          if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}") {
+            Copy-Item $env:CER_PATH "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}/" -Force
+            Write-Host "Certificate copied to ${{ matrix.platform }} directory."
+          }
+        }
       
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4

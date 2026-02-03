@@ -6,6 +6,8 @@ This guide explains how to generate certificates, configure GitHub Actions secre
 
 The GitHub Actions workflow automatically signs MSIX packages during the CI build process if certificate secrets are configured. Without signing, Windows will block installation of the MSIX packages.
 
+**Important:** When signing is enabled, the workflow automatically exports the public certificate (`.cer` file) and includes it in the build artifacts alongside the signed MSIX packages. This makes it easy to install the certificate on target machines.
+
 ## Prerequisites
 
 - Windows 10/11 with Developer Mode enabled (for development/testing)
@@ -116,6 +118,7 @@ Write-Host "Base64 string saved to Desktop\pfx_base64.txt"
 The workflow is automatically configured to:
 - Detect if secrets are present
 - Sign all `.msix` files if secrets are available
+- Export the public certificate (`.cer`) and include it in the artifacts
 - Skip signing with a clear message if secrets are not present
 - Use SHA256 digest algorithm and DigiCert timestamp server
 
@@ -123,21 +126,24 @@ The workflow is automatically configured to:
 
 To install a signed MSIX package on a target machine, you must first install the public certificate.
 
+**Note:** The public certificate file (`AutoRGBPrototypeDev.cer`) is automatically included in the GitHub Actions artifacts when signing is enabled. Download the artifact and extract the certificate file.
+
 ### Option 1: Install via Double-Click (Easiest)
 
-1. Copy the `SigningCert.cer` file to the target machine
-2. Double-click the `.cer` file
-3. Click **Install Certificate**
-4. Select **Local Machine** (requires Administrator) or **Current User**
-5. Choose **Place all certificates in the following store**
-6. Click **Browse** and select **Trusted People**
-7. Click **OK** → **Next** → **Finish**
+1. Download the artifact from GitHub Actions
+2. Extract the `AutoRGBPrototypeDev.cer` file to the target machine
+3. Double-click the `.cer` file
+4. Click **Install Certificate**
+5. Select **Local Machine** (requires Administrator) or **Current User**
+6. Choose **Place all certificates in the following store**
+7. Click **Browse** and select **Trusted People**
+8. Click **OK** → **Next** → **Finish**
 
 ### Option 2: Install via PowerShell (Administrator)
 
 ```powershell
 # Import certificate to Trusted People store (for sideloading)
-$certPath = "C:\Path\To\SigningCert.cer"
+$certPath = "C:\Path\To\AutoRGBPrototypeDev.cer"
 Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\LocalMachine\TrustedPeople
 
 # Optionally, also add to Trusted Root (if needed)
@@ -147,7 +153,7 @@ Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\LocalMachine\Roo
 ### Option 3: Install via Command Prompt (Administrator)
 
 ```cmd
-certutil -addstore TrustedPeople "C:\Path\To\SigningCert.cer"
+certutil -addstore TrustedPeople "C:\Path\To\AutoRGBPrototypeDev.cer"
 ```
 
 ### Installing the MSIX Package
