@@ -154,6 +154,10 @@
     </ClInclude>
     <ClInclude Include="ShaderDefines.h" />
     <ClInclude Include="Vector3.h" />
+    <ClInclude Include="ZoneConfiguration.h" />
+    <ClInclude Include="ZoneLayout.h" />
+    <ClInclude Include="ZoneColorExtractor.h" />
+    <ClInclude Include="ZoneColorSmoother.h" />
   </ItemGroup>
   <ItemGroup>
     <ApplicationDefinition Include="App.xaml" />

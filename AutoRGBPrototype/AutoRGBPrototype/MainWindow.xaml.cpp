@@ -41,8 +41,26 @@ namespace winrt::AutoRGBPrototype::implementation
 
                     colorOutput().Fill(winrt::Media::SolidColorBrush(c));
 
-                    // Change the color of the connected RGB devices to match the predominant color on screen
-                    m_rgbDeviceManager.ChangeColor(args.R(), args.G(), args.B());
+                    // Use zone colors if available
+                    auto zoneColors = args.ZoneColors();
+                    if (zoneColors && zoneColors.Size() > 0)
+                    {
+                        // Convert to std::vector<RGBColor> for device manager
+                        std::vector<RGBColor> colors;
+                        colors.reserve(zoneColors.Size());
+                        for (const auto& zc : zoneColors)
+                        {
+                            colors.emplace_back(255, zc.R, zc.G, zc.B);
+                        }
+
+                        // Set per-lamp colors on the selected device
+                        m_rgbDeviceManager.SetLampColors(colors);
+                    }
+                    else
+                    {
+                        // Fallback: change the color of all RGB devices to match the predominant color
+                        m_rgbDeviceManager.ChangeColor(args.R(), args.G(), args.B());
+                    }
                 });
 
             m_graphicsManager.StartCapture();

@@ -129,6 +129,12 @@ HRESULT RGBDeviceManager::OnDeviceAdded(wrl::IDeviceWatcher*, wrl::IDeviceInform
 
 	m_lightingDevices[device._id] = device;
 
+	// Auto-select first device if no device is selected
+	if (m_selectedDeviceId.empty())
+	{
+		SelectFirstDevice();
+	}
+
 	return S_OK;
 }
 
@@ -141,6 +147,13 @@ HRESULT RGBDeviceManager::OnDeviceRemoved(wrl::IDeviceWatcher*, wrl::IDeviceInfo
 	if (m_lightingDevices.find(wId) != m_lightingDevices.end())
 	{
 		m_lightingDevices.erase(wId);
+
+		// If the removed device was the selected one, select another
+		if (m_selectedDeviceId == wId)
+		{
+			m_selectedDeviceId.clear();
+			SelectNextAvailableDevice();
+		}
 	}
 
 	return S_OK;
@@ -155,3 +168,77 @@ void RGBDeviceManager::ChangeColor(uint8_t r, uint8_t g, uint8_t b)
 		device.second._lampArray->SetColor(m_currentColor);
 	}
 }
+
+// Set per-lamp colors on the selected device
+void RGBDeviceManager::SetLampColors(const std::vector<RGBColor>& colors)
+{
+	if (m_selectedDeviceId.empty() || colors.empty())
+	{
+		return;
+	}
+
+	auto it = m_lightingDevices.find(m_selectedDeviceId);
+	if (it == m_lightingDevices.end())
+	{
+		return;
+	}
+
+	auto& device = it->second;
+	
+	// Map zone colors to lamps (take minimum of zone count and lamp count)
+	int numLampsToSet = min(static_cast<int>(colors.size()), device._lampCount);
+
+	for (int i = 0; i < numLampsToSet; ++i)
+	{
+		const auto& color = colors[i];
+		ABI::Windows::UI::Color lampColor;
+		winrt::check_hresult(m_colorHelperStatics->FromArgb(
+			static_cast<uint8_t>(color.a),
+			static_cast<uint8_t>(color.r),
+			static_cast<uint8_t>(color.g),
+			static_cast<uint8_t>(color.b),
+			&lampColor));
+		
+		device._lampArray->SetColorForIndex(i, lampColor);
+	}
+}
+
+// Get the lamp count of the selected device
+int RGBDeviceManager::GetSelectedDeviceLampCount() const
+{
+	if (m_selectedDeviceId.empty())
+	{
+		return 0;
+	}
+
+	auto it = m_lightingDevices.find(m_selectedDeviceId);
+	if (it == m_lightingDevices.end())
+	{
+		return 0;
+	}
+
+	return it->second._lampCount;
+}
+
+// Select the first available device
+void RGBDeviceManager::SelectFirstDevice()
+{
+	if (!m_lightingDevices.empty())
+	{
+		m_selectedDeviceId = m_lightingDevices.begin()->first;
+	}
+}
+
+// Select the next available device (used when current device is removed)
+void RGBDeviceManager::SelectNextAvailableDevice()
+{
+	if (!m_lightingDevices.empty())
+	{
+		m_selectedDeviceId = m_lightingDevices.begin()->first;
+	}
+	else
+	{
+		m_selectedDeviceId.clear();
+	}
+}
+

@@ -1,10 +1,20 @@
 namespace AutoRGBPrototype
 {
+    struct ZoneColor
+    {
+        UInt8 R;
+        UInt8 G;
+        UInt8 B;
+    };
+
     runtimeclass CaptureTakenEventArgs
     {
         UInt8 R { get; };
         UInt8 G { get; };
         UInt8 B { get; };
+        
+        // Zone-based colors (empty if zone mode disabled)
+        Windows.Foundation.Collections.IVector<ZoneColor> ZoneColors { get; };
     }
 
     runtimeclass GraphicsManager

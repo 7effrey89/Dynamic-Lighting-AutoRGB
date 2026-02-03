@@ -5,9 +5,14 @@
 
 #include "ShaderDefines.h"
 #include "ColorAlgorithm.h"
+#include "ZoneConfiguration.h"
+#include "ZoneLayout.h"
+#include "ZoneColorExtractor.h"
+#include "ZoneColorSmoother.h"
 
 #include <Vector3.h>
 #include <future>
+#include <chrono>
 
 namespace winrt::AutoRGBPrototype::implementation
 {
@@ -66,11 +71,28 @@ namespace winrt::AutoRGBPrototype::implementation
 
         // Predominant color calculator
         ColorAlgorithm m_colorAlgorithm;
+
+        // Zone-based capture
+        ZoneConfiguration m_zoneConfig;
+        ZoneLayout m_zoneLayout;
+        ZoneColorExtractor m_zoneColorExtractor;
+        ZoneColorSmoother m_zoneColorSmoother;
+        bool m_useZoneCapture = true;
+
+        // FPS throttling
+        std::chrono::steady_clock::time_point m_lastFrameTime;
+        std::chrono::milliseconds m_frameInterval{ 33 }; // ~30 FPS default
     };
 
     struct CaptureTakenEventArgs : CaptureTakenEventArgsT<CaptureTakenEventArgs>
     {
         CaptureTakenEventArgs(uint8_t r, uint8_t g, uint8_t b) : m_R(r), m_G(g), m_B(b)
+        {
+        }
+
+        CaptureTakenEventArgs(uint8_t r, uint8_t g, uint8_t b, 
+            winrt::Windows::Foundation::Collections::IVector<AutoRGBPrototype::ZoneColor> zoneColors)
+            : m_R(r), m_G(g), m_B(b), m_zoneColors(zoneColors)
         {
         }
 
@@ -89,10 +111,16 @@ namespace winrt::AutoRGBPrototype::implementation
             return m_B;
         }
 
+        winrt::Windows::Foundation::Collections::IVector<AutoRGBPrototype::ZoneColor> ZoneColors()
+        {
+            return m_zoneColors;
+        }
+
     private:
         uint8_t m_R;
         uint8_t m_G;
         uint8_t m_B;
+        winrt::Windows::Foundation::Collections::IVector<AutoRGBPrototype::ZoneColor> m_zoneColors{ nullptr };
     };
 
     // This struct is needed to pass in information about the monitor size to the shader
