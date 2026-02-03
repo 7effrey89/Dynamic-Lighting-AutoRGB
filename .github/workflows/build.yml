@@ -1,0 +1,57 @@
+name: Build AutoRGB Application
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  SOLUTION_FILE_PATH: AutoRGBPrototype.sln
+  BUILD_CONFIGURATION: Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        platform: [x64, x86, arm64]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Add MSBuild to PATH
+      uses: microsoft/setup-msbuild@v1.3
+      
+    - name: Setup NuGet
+      uses: nuget/setup-nuget@v1
+      with:
+        nuget-version: 'latest'
+    
+    - name: Restore NuGet packages
+      run: nuget restore ${{ env.SOLUTION_FILE_PATH }}
+      
+    - name: Build solution
+      run: msbuild ${{ env.SOLUTION_FILE_PATH }} /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform=${{ matrix.platform }} /m /p:AppxBundle=Never /p:UapAppxPackageBuildMode=SideloadOnly
+      
+    - name: List build output
+      shell: pwsh
+      run: |
+        Write-Host "Listing build output directories..."
+        if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages") {
+          Get-ChildItem -Path "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages" -Recurse | Select-Object FullName
+        }
+        if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}") {
+          Get-ChildItem -Path "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}" -Recurse | Select-Object FullName
+        }
+      
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: AutoRGBPrototype-${{ matrix.platform }}-${{ env.BUILD_CONFIGURATION }}
+        path: |
+          AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages/**/*
+          AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}/${{ env.BUILD_CONFIGURATION }}/**/*
+        if-no-files-found: warn
