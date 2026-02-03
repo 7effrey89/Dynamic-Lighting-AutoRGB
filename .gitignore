@@ -30,3 +30,6 @@ AutoRGBPrototype/AutoRGBPrototype/Generated Files
 *.p12
 **/SigningCert.*
 pfx_base64.txt
+
+# Downloaded tools
+actionlint
