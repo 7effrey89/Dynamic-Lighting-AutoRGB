@@ -36,7 +36,23 @@ $cert = New-SelfSignedCertificate `
 Write-Host "Certificate created with thumbprint: $($cert.Thumbprint)"
 ```
 
-**Important:** Replace `YourName`, `YourOrganization`, and `C=US` with your actual details. The `Subject` field should match the `Publisher` field in your `Package.appxmanifest` file.
+**Important:** Replace `YourName`, `YourOrganization`, and `C=US` with your actual details. 
+
+**CRITICAL:** The `Subject` field **MUST exactly match** the `Publisher` field in your `AutoRGBPrototype/AutoRGBPrototype (Package)/Package.appxmanifest` file. 
+
+Before creating the certificate, check the current Publisher in Package.appxmanifest:
+```xml
+<Identity
+  Name="AutoRGB"
+  Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+  Version="1.0.0.0"/>
+```
+
+Either:
+- **Option A**: Update the Publisher in Package.appxmanifest to match your certificate Subject (e.g., `CN=YourName, O=YourOrganization, C=US`)
+- **Option B**: Create the certificate with a Subject that matches the existing Publisher in the manifest
+
+The workflow will display both values during signing to help you verify they match.
 
 ### Step 2: Export the Certificate with Private Key (PFX)
 
@@ -230,10 +246,26 @@ The Windows SDK should be pre-installed on `windows-latest` runners. If this err
 
 ### Issue: SignerSign() failed with error 0x8007000b (ERROR_BAD_FORMAT)
 
-**Solution:** This error typically occurs when trying to sign a package that was already signed during the build or has conflicting signing metadata. The workflow now builds packages with `/p:AppxPackageSigningEnabled=false` to create truly unsigned packages that can be properly signed post-build. If you encounter this error:
-- Ensure your workflow uses the `AppxPackageSigningEnabled=false` MSBuild parameter
-- Verify the package is not being signed during the build process
-- Check that the certificate Subject matches the Publisher in `Package.appxmanifest` if you're using a custom certificate
+**Solution:** This error occurs when the certificate cannot sign the package. The workflow now displays diagnostic information to help identify the issue. Common causes:
+
+1. **Certificate Subject Mismatch (Most Common)**: The certificate's Subject field must **exactly match** the Publisher field in `Package.appxmanifest`.
+   - The workflow now displays both values during signing
+   - Update either the manifest Publisher or regenerate the certificate to match
+   - Example: If cert Subject is `CN=YourName, O=YourOrg, C=US`, the manifest Publisher must be exactly `CN=YourName, O=YourOrg, C=US`
+
+2. **Incorrect Certificate Password**: Verify the `WINDOWS_PFX_PASSWORD` secret is correct
+   - Test the password locally by opening the PFX file
+
+3. **Invalid or Corrupted Certificate**: Re-export the PFX file and re-encode to Base64
+   - Ensure the PFX file includes the private key
+
+4. **Certificate Expired or Not Yet Valid**: Check the certificate validity dates
+   - The workflow displays the certificate validity period
+
+5. **Package Already Signed**: Ensure your workflow uses the `AppxPackageSigningEnabled=false` MSBuild parameter
+   - Verify the package is not being signed during the build process
+
+**To diagnose**: The workflow now automatically displays the certificate Subject and manifest Publisher during the signing step. Check the GitHub Actions logs for these details.
 
 ## Security Best Practices
 
