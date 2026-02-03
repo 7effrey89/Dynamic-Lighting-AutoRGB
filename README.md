@@ -1,5 +1,7 @@
 # AutoRGB Sample Overview
 
+[![Build Status](https://github.com/7effrey89/Dynamic-Lighting-AutoRGB/actions/workflows/build.yml/badge.svg)](https://github.com/7effrey89/Dynamic-Lighting-AutoRGB/actions/workflows/build.yml)
+
 ### Description
 
 This sample demonstrates how to extract zone-based ambient colors from a desktop 
@@ -12,6 +14,11 @@ This sample requires the C++/WinRT, Windows App SDK, WinUI, and Windows
 Implementation Library packages. 
 
 ### Building the Sample
+
+#### Automated Builds (CI/CD)
+Pre-built executables are automatically compiled for every commit and can be downloaded from the [GitHub Actions](https://github.com/7effrey89/Dynamic-Lighting-AutoRGB/actions) page. Available platforms: x64, x86, and arm64.
+
+#### Manual Build
 Deploy the app. Click on the "Capture screen" button to begin the screen
 capture that calculates the zone-based ambient colors to display. Watch your 
 lighting device illuminate with colors that match the edges of your screen! 
