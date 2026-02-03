@@ -252,18 +252,16 @@ namespace winrt::AutoRGBPrototype::implementation
             uint8_t avgG = smoothedZoneColors.empty() ? 0 : static_cast<uint8_t>(totalG / smoothedZoneColors.size());
             uint8_t avgB = smoothedZoneColors.empty() ? 0 : static_cast<uint8_t>(totalB / smoothedZoneColors.size());
 
-            // Convert to WinRT vector
-            auto zoneColorsVector = winrt::single_threaded_vector<AutoRGBPrototype::ZoneColor>();
+            // Convert to WinRT flat vector [R0,G0,B0, R1,G1,B1, ...]
+            auto zoneColorsFlat = winrt::single_threaded_vector<uint8_t>();
             for (const auto& color : smoothedZoneColors)
             {
-                AutoRGBPrototype::ZoneColor zc;
-                zc.R = static_cast<uint8_t>(color.r);
-                zc.G = static_cast<uint8_t>(color.g);
-                zc.B = static_cast<uint8_t>(color.b);
-                zoneColorsVector.Append(zc);
+                zoneColorsFlat.Append(static_cast<uint8_t>(color.r));
+                zoneColorsFlat.Append(static_cast<uint8_t>(color.g));
+                zoneColorsFlat.Append(static_cast<uint8_t>(color.b));
             }
 
-            auto captureTakenEventArgs = make_self<CaptureTakenEventArgs>(avgR, avgG, avgB, zoneColorsVector);
+            auto captureTakenEventArgs = make_self<CaptureTakenEventArgs>(avgR, avgG, avgB, zoneColorsFlat, static_cast<int32_t>(smoothedZoneColors.size()));
             m_captureTaken(*this, *captureTakenEventArgs);
         }
         else

@@ -86,13 +86,14 @@ namespace winrt::AutoRGBPrototype::implementation
 
     struct CaptureTakenEventArgs : CaptureTakenEventArgsT<CaptureTakenEventArgs>
     {
-        CaptureTakenEventArgs(uint8_t r, uint8_t g, uint8_t b) : m_R(r), m_G(g), m_B(b)
+        CaptureTakenEventArgs(uint8_t r, uint8_t g, uint8_t b) : m_R(r), m_G(g), m_B(b), m_zoneCount(0)
         {
         }
 
         CaptureTakenEventArgs(uint8_t r, uint8_t g, uint8_t b, 
-            winrt::Windows::Foundation::Collections::IVector<AutoRGBPrototype::ZoneColor> zoneColors)
-            : m_R(r), m_G(g), m_B(b), m_zoneColors(zoneColors)
+            winrt::Windows::Foundation::Collections::IVector<uint8_t> zoneColorsFlat,
+            int32_t zoneCount)
+            : m_R(r), m_G(g), m_B(b), m_zoneColorsFlat(zoneColorsFlat), m_zoneCount(zoneCount)
         {
         }
 
@@ -111,16 +112,22 @@ namespace winrt::AutoRGBPrototype::implementation
             return m_B;
         }
 
-        winrt::Windows::Foundation::Collections::IVector<AutoRGBPrototype::ZoneColor> ZoneColors()
+        winrt::Windows::Foundation::Collections::IVector<uint8_t> ZoneColorsFlat()
         {
-            return m_zoneColors;
+            return m_zoneColorsFlat;
+        }
+
+        int32_t ZoneCount()
+        {
+            return m_zoneCount;
         }
 
     private:
         uint8_t m_R;
         uint8_t m_G;
         uint8_t m_B;
-        winrt::Windows::Foundation::Collections::IVector<AutoRGBPrototype::ZoneColor> m_zoneColors{ nullptr };
+        winrt::Windows::Foundation::Collections::IVector<uint8_t> m_zoneColorsFlat{ nullptr };
+        int32_t m_zoneCount;
     };
 
     // This struct is needed to pass in information about the monitor size to the shader

@@ -42,15 +42,21 @@ namespace winrt::AutoRGBPrototype::implementation
                     colorOutput().Fill(winrt::Media::SolidColorBrush(c));
 
                     // Use zone colors if available
-                    auto zoneColors = args.ZoneColors();
-                    if (zoneColors && zoneColors.Size() > 0)
+                    auto zoneColorsFlat = args.ZoneColorsFlat();
+                    int32_t zoneCount = args.ZoneCount();
+                    
+                    if (zoneColorsFlat && zoneCount > 0 && zoneColorsFlat.Size() >= static_cast<uint32_t>(zoneCount * 3))
                     {
-                        // Convert to std::vector<RGBColor> for device manager
+                        // Convert flat array to std::vector<RGBColor>
                         std::vector<RGBColor> colors;
-                        colors.reserve(zoneColors.Size());
-                        for (const auto& zc : zoneColors)
+                        colors.reserve(zoneCount);
+                        
+                        for (int32_t i = 0; i < zoneCount; ++i)
                         {
-                            colors.emplace_back(255, zc.R, zc.G, zc.B);
+                            uint8_t r = zoneColorsFlat.GetAt(i * 3 + 0);
+                            uint8_t g = zoneColorsFlat.GetAt(i * 3 + 1);
+                            uint8_t b = zoneColorsFlat.GetAt(i * 3 + 2);
+                            colors.emplace_back(255, r, g, b);
                         }
 
                         // Set per-lamp colors on the selected device
