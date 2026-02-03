@@ -17,27 +17,26 @@ jobs:
     strategy:
       matrix:
         platform: [x64, x86, arm64]
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v1.3
-      
+
     - name: Setup NuGet
       uses: nuget/setup-nuget@v1
       with:
         nuget-version: 'latest'
-    
+
     - name: Restore NuGet packages
       run: nuget restore ${{ env.SOLUTION_FILE_PATH }}
-      
+
     - name: Clean build directories
       shell: pwsh
       run: |
         Write-Host "Cleaning build directories..."
-        # Clean project-level build outputs
         Remove-Item -Recurse -Force "AutoRGBPrototype/AutoRGBPrototype/Release" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "AutoRGBPrototype/AutoRGBPrototype/Debug" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "AutoRGBPrototype/AutoRGBPrototype/x64" -ErrorAction SilentlyContinue
@@ -47,22 +46,56 @@ jobs:
         Remove-Item -Recurse -Force "AutoRGBPrototype/AutoRGBPrototype (Package)/x64" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "AutoRGBPrototype/AutoRGBPrototype (Package)/x86" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "AutoRGBPrototype/AutoRGBPrototype (Package)/arm64" -ErrorAction SilentlyContinue
-        # Clean top-level build outputs
         Remove-Item -Recurse -Force "Release" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "Debug" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "x64" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "x86" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "arm64" -ErrorAction SilentlyContinue
-        # Clean tracking log files
         Get-ChildItem -Recurse -Filter "*.tlog" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
         Write-Host "Build directories cleaned."
-    
+
     - name: Clean solution
       run: msbuild ${{ env.SOLUTION_FILE_PATH }} /t:Clean /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform=${{ matrix.platform }}
-      
+
     - name: Build solution
       run: msbuild ${{ env.SOLUTION_FILE_PATH }} /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform=${{ matrix.platform }} /p:AppxBundle=Never /p:UapAppxPackageBuildMode=SideloadOnly
-      
+
+    # --- NEW: Decode PFX from secrets ---
+    - name: Prepare signing certificate
+      if: ${{ secrets.WINDOWS_PFX_BASE64 != '' }}
+      shell: pwsh
+      run: |
+        $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+        [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String("${{ secrets.WINDOWS_PFX_BASE64 }}"))
+        "PFX_PATH=$pfxPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+    # --- NEW: Sign all MSIX files ---
+    - name: Sign MSIX packages
+      if: ${{ env.PFX_PATH != '' }}
+      shell: pwsh
+      run: |
+        $signtool = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin\x64\signtool.exe"
+        if (!(Test-Path $signtool)) { throw "signtool.exe not found at $signtool" }
+
+        $targets = @()
+        if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages") {
+          $targets += Get-ChildItem "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages" -Recurse -Filter *.msix -ErrorAction SilentlyContinue
+        }
+        if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}") {
+          $targets += Get-ChildItem "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}" -Recurse -Filter *.msix -ErrorAction SilentlyContinue
+        }
+
+        if ($targets.Count -eq 0) {
+          Write-Host "No .msix files found to sign."
+          exit 0
+        }
+
+        foreach ($f in $targets) {
+          Write-Host "Signing $($f.FullName)"
+          & $signtool sign /fd SHA256 /f "$env:PFX_PATH" /p "${{ secrets.WINDOWS_PFX_PASSWORD }}" /tr http://timestamp.digicert.com /td SHA256 "$($f.FullName)"
+          if ($LASTEXITCODE -ne 0) { throw "signtool failed for $($f.FullName)" }
+        }
+
     - name: List build output
       shell: pwsh
       run: |
@@ -73,139 +106,7 @@ jobs:
         if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}") {
           Get-ChildItem -Path "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}" -Recurse | Select-Object FullName
         }
-      
-    - name: Decode and prepare certificate
-      if: ${{ secrets.WINDOWS_PFX_BASE64 != '' && secrets.WINDOWS_PFX_PASSWORD != '' }}
-      shell: pwsh
-      run: |
-        Write-Host "Certificate secrets detected. Preparing certificate for signing..."
-        $pfxBytes = [System.Convert]::FromBase64String("${{ secrets.WINDOWS_PFX_BASE64 }}")
-        $certPath = Join-Path $env:TEMP "signing-cert.pfx"
-        [IO.File]::WriteAllBytes($certPath, $pfxBytes)
-        Write-Host "Certificate prepared at temporary location."
-        echo "CERT_PATH=$certPath" >> $env:GITHUB_ENV
-        echo "CERT_PASSWORD=${{ secrets.WINDOWS_PFX_PASSWORD }}" >> $env:GITHUB_ENV
-        
-        # Export public certificate (.cer) for distribution with artifacts
-        Write-Host "Exporting public certificate..."
-        $securePwd = ConvertTo-SecureString -String "${{ secrets.WINDOWS_PFX_PASSWORD }}" -Force -AsPlainText
-        
-        # Import PFX to temporary certificate store
-        $cert = Import-PfxCertificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\My -Password $securePwd -Exportable
-        
-        # Export public certificate to .cer file in $RUNNER_TEMP
-        $cerPath = Join-Path $env:RUNNER_TEMP "AutoRGBPrototypeDev.cer"
-        Export-Certificate -Cert $cert -FilePath $cerPath -Type CERT | Out-Null
-        Write-Host "Public certificate exported to: $cerPath"
-        
-        # Remove certificate from temporary store
-        Remove-Item -Path "Cert:\CurrentUser\My\$($cert.Thumbprint)" -Force
-        Write-Host "Certificate removed from temporary store."
-        
-        echo "CER_PATH=$cerPath" >> $env:GITHUB_ENV
-        
-    - name: Sign MSIX packages
-      if: ${{ secrets.WINDOWS_PFX_BASE64 != '' && secrets.WINDOWS_PFX_PASSWORD != '' }}
-      shell: pwsh
-      run: |
-        Write-Host "Signing MSIX packages..."
-        
-        # Find signtool.exe from Windows SDK
-        $signtoolPath = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" -Filter "signtool.exe" -Recurse -ErrorAction SilentlyContinue | 
-                        Where-Object { $_.FullName -match "x64" } | 
-                        Select-Object -First 1 -ExpandProperty FullName
-        
-        if (-not $signtoolPath) {
-          Write-Error "signtool.exe not found. Please ensure Windows SDK is installed."
-          exit 1
-        }
-        
-        Write-Host "Using signtool at: $signtoolPath"
-        
-        # Find all .msix files in the specified directories
-        $msixFiles = @()
-        $searchPaths = @(
-          "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages",
-          "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}"
-        )
-        
-        foreach ($searchPath in $searchPaths) {
-          if (Test-Path $searchPath) {
-            $found = Get-ChildItem -Path $searchPath -Filter "*.msix" -Recurse -ErrorAction SilentlyContinue
-            if ($found) {
-              $msixFiles += $found
-            }
-          }
-        }
-        
-        if ($msixFiles.Count -eq 0) {
-          Write-Warning "No .msix files found to sign."
-          exit 0
-        }
-        
-        Write-Host "Found $($msixFiles.Count) .msix file(s) to sign."
-        
-        # Sign each .msix file
-        foreach ($msixFile in $msixFiles) {
-          Write-Host "Signing: $($msixFile.FullName)"
-          
-          & $signtoolPath sign /f "$env:CERT_PATH" /p "$env:CERT_PASSWORD" /fd SHA256 /tr "http://timestamp.digicert.com" /td SHA256 "$($msixFile.FullName)"
-          
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to sign $($msixFile.FullName)"
-            exit 1
-          }
-          
-          Write-Host "Successfully signed: $($msixFile.Name)"
-        }
-        
-        Write-Host "All MSIX packages signed successfully."
-        
-    - name: Copy public certificate to artifact directories
-      if: ${{ secrets.WINDOWS_PFX_BASE64 != '' && secrets.WINDOWS_PFX_PASSWORD != '' }}
-      shell: pwsh
-      run: |
-        if ($env:CER_PATH -and (Test-Path $env:CER_PATH)) {
-          Write-Host "Copying public certificate to artifact directories..."
-          
-          # Copy to AppPackages directory if it exists
-          if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages") {
-            Copy-Item $env:CER_PATH "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages/" -Force
-            Write-Host "Certificate copied to AppPackages directory."
-          }
-          
-          # Copy to platform-specific directory if it exists
-          if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}") {
-            Copy-Item $env:CER_PATH "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}/" -Force
-            Write-Host "Certificate copied to ${{ matrix.platform }} directory."
-          }
-        }
-        
-    - name: Clean up certificate
-      if: always()
-      shell: pwsh
-      run: |
-        if ($env:CERT_PATH -and (Test-Path $env:CERT_PATH)) {
-          Remove-Item -Path $env:CERT_PATH -Force -ErrorAction SilentlyContinue
-          Write-Host "Certificate file cleaned up."
-        }
-        if ($env:CER_PATH -and (Test-Path $env:CER_PATH)) {
-          Remove-Item -Path $env:CER_PATH -Force -ErrorAction SilentlyContinue
-          Write-Host "Public certificate file cleaned up."
-        }
-        
-    - name: Skip signing notice
-      if: ${{ secrets.WINDOWS_PFX_BASE64 == '' || secrets.WINDOWS_PFX_PASSWORD == '' }}
-      shell: pwsh
-      run: |
-        Write-Host "=========================================="
-        Write-Host "MSIX SIGNING SKIPPED"
-        Write-Host "=========================================="
-        Write-Host "Certificate secrets (WINDOWS_PFX_BASE64 and/or WINDOWS_PFX_PASSWORD) are not configured."
-        Write-Host "The generated .msix packages will not be signed."
-        Write-Host "To enable signing, add the required secrets to your repository settings."
-        Write-Host "=========================================="
-      
+
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
