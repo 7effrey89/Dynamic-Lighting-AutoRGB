@@ -23,3 +23,10 @@ AutoRGBPrototype/AutoRGBPrototype (Package)/AutoRGBPrototype (Package).assets.ca
 AutoRGBPrototype/AutoRGBPrototype (Package)/AutoRGBPrototype (Package).wapproj.user
 AutoRGBPrototype/AutoRGBPrototype/AutoRGBPrototype.vcxproj.user
 AutoRGBPrototype/AutoRGBPrototype/Generated Files
+
+# Certificate files - never commit these
+*.pfx
+*.cer
+*.p12
+**/SigningCert.*
+pfx_base64.txt
