@@ -161,6 +161,26 @@ jobs:
         
         Write-Host "All MSIX packages signed successfully."
         
+    - name: Copy public certificate to artifact directories
+      if: ${{ secrets.WINDOWS_PFX_BASE64 != '' && secrets.WINDOWS_PFX_PASSWORD != '' }}
+      shell: pwsh
+      run: |
+        if ($env:CER_PATH -and (Test-Path $env:CER_PATH)) {
+          Write-Host "Copying public certificate to artifact directories..."
+          
+          # Copy to AppPackages directory if it exists
+          if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages") {
+            Copy-Item $env:CER_PATH "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages/" -Force
+            Write-Host "Certificate copied to AppPackages directory."
+          }
+          
+          # Copy to platform-specific directory if it exists
+          if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}") {
+            Copy-Item $env:CER_PATH "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}/" -Force
+            Write-Host "Certificate copied to ${{ matrix.platform }} directory."
+          }
+        }
+        
     - name: Clean up certificate
       if: always()
       shell: pwsh
@@ -185,26 +205,6 @@ jobs:
         Write-Host "The generated .msix packages will not be signed."
         Write-Host "To enable signing, add the required secrets to your repository settings."
         Write-Host "=========================================="
-      
-    - name: Copy public certificate to artifact directories
-      if: ${{ secrets.WINDOWS_PFX_BASE64 != '' && secrets.WINDOWS_PFX_PASSWORD != '' }}
-      shell: pwsh
-      run: |
-        if ($env:CER_PATH -and (Test-Path $env:CER_PATH)) {
-          Write-Host "Copying public certificate to artifact directories..."
-          
-          # Copy to AppPackages directory if it exists
-          if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages") {
-            Copy-Item $env:CER_PATH "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages/" -Force
-            Write-Host "Certificate copied to AppPackages directory."
-          }
-          
-          # Copy to platform-specific directory if it exists
-          if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}") {
-            Copy-Item $env:CER_PATH "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}/" -Force
-            Write-Host "Certificate copied to ${{ matrix.platform }} directory."
-          }
-        }
       
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
