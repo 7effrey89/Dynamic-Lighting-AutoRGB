@@ -2,6 +2,7 @@
 
 #include "RGBDeviceManager.h"
 #include <vector>
+#include <algorithm>
 
 // Applies exponential moving average smoothing to zone colors
 class ZoneColorSmoother
@@ -55,9 +56,9 @@ public:
             uint32_t smoothedB = static_cast<uint32_t>(prev.b + alpha * (static_cast<float>(curr.b) - static_cast<float>(prev.b)));
 
             // Clamp to 0-255
-            smoothedR = min(255u, smoothedR);
-            smoothedG = min(255u, smoothedG);
-            smoothedB = min(255u, smoothedB);
+            smoothedR = (std::min)(255u, smoothedR);
+            smoothedG = (std::min)(255u, smoothedG);
+            smoothedB = (std::min)(255u, smoothedB);
 
             smoothedColors.emplace_back(255, smoothedR, smoothedG, smoothedB);
         }

@@ -186,7 +186,7 @@ void RGBDeviceManager::SetLampColors(const std::vector<RGBColor>& colors)
 	auto& device = it->second;
 	
 	// Map zone colors to lamps (take minimum of zone count and lamp count)
-	int numLampsToSet = min(static_cast<int>(colors.size()), device._lampCount);
+	int numLampsToSet = (std::min)(static_cast<int>(colors.size()), device._lampCount);
 
 	for (int i = 0; i < numLampsToSet; ++i)
 	{

@@ -5,6 +5,7 @@
 #include <d3d11.h>
 #include <wrl.h>
 #include <vector>
+#include <algorithm>
 
 // Extracts per-zone colors from captured frame using CPU sampling
 class ZoneColorExtractor
@@ -68,10 +69,10 @@ public:
             int endY = static_cast<int>((zone.y + zone.height) * screenHeight);
 
             // Clamp to screen bounds
-            startX = max(0, min(startX, screenWidth - 1));
-            startY = max(0, min(startY, screenHeight - 1));
-            endX = max(0, min(endX, screenWidth));
-            endY = max(0, min(endY, screenHeight));
+            startX = (std::max)(0, (std::min)(startX, screenWidth - 1));
+            startY = (std::max)(0, (std::min)(startY, screenHeight - 1));
+            endX = (std::max)(0, (std::min)(endX, screenWidth));
+            endY = (std::max)(0, (std::min)(endY, screenHeight));
 
             // Sample every Nth pixel for performance (stride)
             const int stride = 4; // Sample every 4th pixel in each direction
