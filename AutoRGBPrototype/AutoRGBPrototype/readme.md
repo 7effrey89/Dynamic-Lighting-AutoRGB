@@ -123,6 +123,6 @@ http://aka.ms/cppwinrt/
 Learn more about Windows.Devices.Lights here: 
 https://learn.microsoft.com/en-us/uwp/api/windows.devices.lights?view=winrt-22621
 Learn more about Windows.Graphics.Capture here:
-https://learn.microsoft.com/en-us/windows/uwp/audio-vo-camera/screen-capture
+https://learn.microsoft.com/en-us/windows/uwp/audio-video-camera/screen-capture
 ========================================================================
 

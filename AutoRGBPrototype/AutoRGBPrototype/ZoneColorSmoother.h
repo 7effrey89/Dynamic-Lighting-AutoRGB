@@ -13,6 +13,7 @@ public:
     void Initialize(size_t zoneCount)
     {
         m_previousColors.clear();
+        // Initialize with black (alpha=255, r=0, g=0, b=0)
         m_previousColors.resize(zoneCount, RGBColor(255, 0, 0, 0));
         m_initialized = false;
     }
