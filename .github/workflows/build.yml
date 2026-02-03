@@ -58,7 +58,7 @@ jobs:
       run: msbuild ${{ env.SOLUTION_FILE_PATH }} /t:Clean /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform=${{ matrix.platform }}
 
     - name: Build solution
-      run: msbuild ${{ env.SOLUTION_FILE_PATH }} /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform=${{ matrix.platform }} /p:AppxBundle=Never /p:UapAppxPackageBuildMode=SideloadOnly
+      run: msbuild ${{ env.SOLUTION_FILE_PATH }} /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform=${{ matrix.platform }} /p:AppxBundle=Never /p:UapAppxPackageBuildMode=SideloadOnly /p:AppxPackageSigningEnabled=false
 
     # --- NEW: Decode PFX from secrets ---
     - name: Prepare signing certificate
@@ -91,8 +91,65 @@ jobs:
           exit 0
         }
 
-        $signtool = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin\x64\signtool.exe"
-        if (!(Test-Path $signtool)) { throw "signtool.exe not found at $signtool" }
+        # Dynamically locate signtool.exe
+        $signtool = $null
+        $windowsKitsPath = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
+        
+        if (Test-Path $windowsKitsPath) {
+          # Search for signtool.exe in SDK versions and architectures
+          $possiblePaths = @(
+            "x64\signtool.exe",
+            "x86\signtool.exe",
+            "arm64\signtool.exe"
+          )
+          
+          # Get all SDK version directories
+          $sdkVersions = Get-ChildItem -Path $windowsKitsPath -Directory -ErrorAction SilentlyContinue | 
+                         Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
+                         Sort-Object Name -Descending
+          
+          # Try versioned paths first (newer SDK installations)
+          foreach ($version in $sdkVersions) {
+            foreach ($arch in $possiblePaths) {
+              $testPath = Join-Path $version.FullName $arch
+              if (Test-Path $testPath) {
+                $signtool = $testPath
+                Write-Host "Found signtool.exe at: $signtool"
+                break
+              }
+            }
+            if ($signtool) { break }
+          }
+          
+          # Fallback to direct architecture paths (older SDK installations)
+          if (!$signtool) {
+            foreach ($arch in $possiblePaths) {
+              $testPath = Join-Path $windowsKitsPath $arch
+              if (Test-Path $testPath) {
+                $signtool = $testPath
+                Write-Host "Found signtool.exe at: $signtool"
+                break
+              }
+            }
+          }
+        }
+        
+        if (!$signtool -or !(Test-Path $signtool)) {
+          throw "signtool.exe not found. Please ensure Windows SDK is installed."
+        }
+
+        # Display certificate information for diagnostics
+        Write-Host "`n=== Certificate Information ==="
+        try {
+          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($env:PFX_PATH, $pfxPassword)
+          Write-Host "Certificate Subject: $($cert.Subject)"
+          Write-Host "Certificate Issuer: $($cert.Issuer)"
+          Write-Host "Certificate Thumbprint: $($cert.Thumbprint)"
+          Write-Host "Certificate Valid: $($cert.NotBefore) to $($cert.NotAfter)"
+        } catch {
+          Write-Host "Warning: Could not read certificate details: $_"
+        }
+        Write-Host "================================`n"
 
         $targets = @()
         if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages") {
@@ -107,10 +164,41 @@ jobs:
           exit 0
         }
 
+        # Check manifest Publisher for the first package
+        $manifestPath = "AutoRGBPrototype/AutoRGBPrototype (Package)/Package.appxmanifest"
+        if (Test-Path $manifestPath) {
+          Write-Host "=== Manifest Publisher Information ==="
+          try {
+            [xml]$manifest = Get-Content $manifestPath
+            $publisher = $manifest.Package.Identity.Publisher
+            Write-Host "Manifest Publisher: $publisher"
+            Write-Host "Note: The certificate Subject must match the Manifest Publisher for signing to succeed."
+            Write-Host "======================================`n"
+          } catch {
+            Write-Host "Warning: Could not read manifest: $_`n"
+          }
+        }
+
         foreach ($f in $targets) {
           Write-Host "Signing $($f.FullName)"
           & $signtool sign /fd SHA256 /f "$env:PFX_PATH" /p $pfxPassword /tr http://timestamp.digicert.com /td SHA256 "$($f.FullName)"
-          if ($LASTEXITCODE -ne 0) { throw "signtool failed for $($f.FullName)" }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "`n=== Signing Failed ==="
+            Write-Host "Error: signtool.exe returned exit code $LASTEXITCODE"
+            Write-Host ""
+            Write-Host "Common causes of signing failures (error 0x8007000b):"
+            Write-Host "1. Certificate Subject does not match the Publisher in Package.appxmanifest"
+            Write-Host "2. Certificate password is incorrect"
+            Write-Host "3. Certificate file is corrupted or invalid"
+            Write-Host "4. Certificate has expired or is not yet valid"
+            Write-Host ""
+            Write-Host "To fix:"
+            Write-Host "- Verify the certificate Subject matches the Publisher field in Package.appxmanifest"
+            Write-Host "- Check that WINDOWS_PFX_PASSWORD secret is correct"
+            Write-Host "- Ensure the certificate is valid and not expired"
+            Write-Host "========================`n"
+            throw "signtool failed for $($f.FullName)"
+          }
         }
         
         Write-Host "All MSIX packages signed successfully."
