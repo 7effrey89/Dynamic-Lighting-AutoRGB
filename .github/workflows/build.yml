@@ -74,6 +74,96 @@ jobs:
           Get-ChildItem -Path "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}" -Recurse | Select-Object FullName
         }
       
+    - name: Decode and prepare certificate
+      if: ${{ secrets.WINDOWS_PFX_BASE64 != '' && secrets.WINDOWS_PFX_PASSWORD != '' }}
+      shell: pwsh
+      run: |
+        Write-Host "Certificate secrets detected. Preparing certificate for signing..."
+        $pfxBytes = [System.Convert]::FromBase64String("${{ secrets.WINDOWS_PFX_BASE64 }}")
+        $certPath = Join-Path $env:TEMP "signing-cert.pfx"
+        [IO.File]::WriteAllBytes($certPath, $pfxBytes)
+        Write-Host "Certificate prepared at temporary location."
+        echo "CERT_PATH=$certPath" >> $env:GITHUB_ENV
+        echo "CERT_PASSWORD=${{ secrets.WINDOWS_PFX_PASSWORD }}" >> $env:GITHUB_ENV
+        
+    - name: Sign MSIX packages
+      if: ${{ secrets.WINDOWS_PFX_BASE64 != '' && secrets.WINDOWS_PFX_PASSWORD != '' }}
+      shell: pwsh
+      run: |
+        Write-Host "Signing MSIX packages..."
+        
+        # Find signtool.exe from Windows SDK
+        $signtoolPath = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" -Filter "signtool.exe" -Recurse -ErrorAction SilentlyContinue | 
+                        Where-Object { $_.FullName -match "x64" } | 
+                        Select-Object -First 1 -ExpandProperty FullName
+        
+        if (-not $signtoolPath) {
+          Write-Error "signtool.exe not found. Please ensure Windows SDK is installed."
+          exit 1
+        }
+        
+        Write-Host "Using signtool at: $signtoolPath"
+        
+        # Find all .msix files in the specified directories
+        $msixFiles = @()
+        $searchPaths = @(
+          "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages",
+          "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}"
+        )
+        
+        foreach ($searchPath in $searchPaths) {
+          if (Test-Path $searchPath) {
+            $found = Get-ChildItem -Path $searchPath -Filter "*.msix" -Recurse -ErrorAction SilentlyContinue
+            if ($found) {
+              $msixFiles += $found
+            }
+          }
+        }
+        
+        if ($msixFiles.Count -eq 0) {
+          Write-Warning "No .msix files found to sign."
+          exit 0
+        }
+        
+        Write-Host "Found $($msixFiles.Count) .msix file(s) to sign."
+        
+        # Sign each .msix file
+        foreach ($msixFile in $msixFiles) {
+          Write-Host "Signing: $($msixFile.FullName)"
+          
+          & $signtoolPath sign /f "$env:CERT_PATH" /p "$env:CERT_PASSWORD" /fd SHA256 /tr "http://timestamp.digicert.com" /td SHA256 "$($msixFile.FullName)"
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to sign $($msixFile.FullName)"
+            exit 1
+          }
+          
+          Write-Host "Successfully signed: $($msixFile.Name)"
+        }
+        
+        Write-Host "All MSIX packages signed successfully."
+        
+    - name: Clean up certificate
+      if: always()
+      shell: pwsh
+      run: |
+        if ($env:CERT_PATH -and (Test-Path $env:CERT_PATH)) {
+          Remove-Item -Path $env:CERT_PATH -Force -ErrorAction SilentlyContinue
+          Write-Host "Certificate file cleaned up."
+        }
+        
+    - name: Skip signing notice
+      if: ${{ secrets.WINDOWS_PFX_BASE64 == '' || secrets.WINDOWS_PFX_PASSWORD == '' }}
+      shell: pwsh
+      run: |
+        Write-Host "=========================================="
+        Write-Host "MSIX SIGNING SKIPPED"
+        Write-Host "=========================================="
+        Write-Host "Certificate secrets (WINDOWS_PFX_BASE64 and/or WINDOWS_PFX_PASSWORD) are not configured."
+        Write-Host "The generated .msix packages will not be signed."
+        Write-Host "To enable signing, add the required secrets to your repository settings."
+        Write-Host "=========================================="
+      
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:

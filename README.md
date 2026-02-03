@@ -18,6 +18,12 @@ lighting device illuminate with colors that match the edges of your screen!
 Try it on videos, games, and more. The app will display the calculated average 
 color as well.
 
+### Installing Pre-built Packages
+
+Pre-built MSIX packages are available from GitHub Actions artifacts. For information 
+about installing signed MSIX packages, certificate requirements, and troubleshooting, 
+see the [MSIX Package Signing Guide](docs/signing.md).
+
 **Note:** The sample app captures the monitor with the active window. If using 
 a multi-monitor setup, the active window's monitor will be captured.
 
