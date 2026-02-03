@@ -91,8 +91,52 @@ jobs:
           exit 0
         }
 
-        $signtool = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin\x64\signtool.exe"
-        if (!(Test-Path $signtool)) { throw "signtool.exe not found at $signtool" }
+        # Dynamically locate signtool.exe
+        $signtool = $null
+        $windowsKitsPath = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
+        
+        if (Test-Path $windowsKitsPath) {
+          # Search for signtool.exe in SDK versions and architectures
+          $possiblePaths = @(
+            "x64\signtool.exe",
+            "x86\signtool.exe",
+            "arm64\signtool.exe"
+          )
+          
+          # Get all SDK version directories
+          $sdkVersions = Get-ChildItem -Path $windowsKitsPath -Directory -ErrorAction SilentlyContinue | 
+                         Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
+                         Sort-Object Name -Descending
+          
+          # Try versioned paths first (newer SDK installations)
+          foreach ($version in $sdkVersions) {
+            foreach ($arch in $possiblePaths) {
+              $testPath = Join-Path $version.FullName $arch
+              if (Test-Path $testPath) {
+                $signtool = $testPath
+                Write-Host "Found signtool.exe at: $signtool"
+                break
+              }
+            }
+            if ($signtool) { break }
+          }
+          
+          # Fallback to direct architecture paths (older SDK installations)
+          if (!$signtool) {
+            foreach ($arch in $possiblePaths) {
+              $testPath = Join-Path $windowsKitsPath $arch
+              if (Test-Path $testPath) {
+                $signtool = $testPath
+                Write-Host "Found signtool.exe at: $signtool"
+                break
+              }
+            }
+          }
+        }
+        
+        if (!$signtool -or !(Test-Path $signtool)) {
+          throw "signtool.exe not found. Please ensure Windows SDK is installed."
+        }
 
         $targets = @()
         if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages") {
