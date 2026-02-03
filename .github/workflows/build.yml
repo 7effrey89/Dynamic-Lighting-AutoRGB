@@ -17,26 +17,27 @@ jobs:
     strategy:
       matrix:
         platform: [x64, x86, arm64]
-
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
+      
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v1.3
-
+      
     - name: Setup NuGet
       uses: nuget/setup-nuget@v1
       with:
         nuget-version: 'latest'
-
+    
     - name: Restore NuGet packages
       run: nuget restore ${{ env.SOLUTION_FILE_PATH }}
-
+      
     - name: Clean build directories
       shell: pwsh
       run: |
         Write-Host "Cleaning build directories..."
+        # Clean project-level build outputs
         Remove-Item -Recurse -Force "AutoRGBPrototype/AutoRGBPrototype/Release" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "AutoRGBPrototype/AutoRGBPrototype/Debug" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "AutoRGBPrototype/AutoRGBPrototype/x64" -ErrorAction SilentlyContinue
@@ -46,163 +47,22 @@ jobs:
         Remove-Item -Recurse -Force "AutoRGBPrototype/AutoRGBPrototype (Package)/x64" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "AutoRGBPrototype/AutoRGBPrototype (Package)/x86" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "AutoRGBPrototype/AutoRGBPrototype (Package)/arm64" -ErrorAction SilentlyContinue
+        # Clean top-level build outputs
         Remove-Item -Recurse -Force "Release" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "Debug" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "x64" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "x86" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "arm64" -ErrorAction SilentlyContinue
+        # Clean tracking log files
         Get-ChildItem -Recurse -Filter "*.tlog" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
         Write-Host "Build directories cleaned."
-
+    
     - name: Clean solution
       run: msbuild ${{ env.SOLUTION_FILE_PATH }} /t:Clean /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform=${{ matrix.platform }}
-
+      
     - name: Build solution
-      run: msbuild ${{ env.SOLUTION_FILE_PATH }} /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform=${{ matrix.platform }} /p:AppxBundle=Never /p:UapAppxPackageBuildMode=SideloadOnly /p:AppxPackageSigningEnabled=false
-
-    # --- NEW: Decode PFX from secrets ---
-    - name: Prepare signing certificate
-      shell: pwsh
-      run: |
-        $pfxBase64 = "${{ secrets.WINDOWS_PFX_BASE64 }}"
-        if ([string]::IsNullOrEmpty($pfxBase64)) {
-          Write-Host "Certificate secrets not configured. Signing will be skipped."
-          exit 0
-        }
-        
-        $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
-        [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($pfxBase64))
-        "PFX_PATH=$pfxPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        Write-Host "Certificate prepared for signing."
-
-    # --- NEW: Sign all MSIX files ---
-    - name: Sign MSIX packages
-      shell: pwsh
-      run: |
-        # Check if certificate was prepared
-        if ([string]::IsNullOrEmpty($env:PFX_PATH) -or !(Test-Path $env:PFX_PATH)) {
-          Write-Host "Certificate not available. Skipping signing."
-          exit 0
-        }
-        
-        $pfxPassword = "${{ secrets.WINDOWS_PFX_PASSWORD }}"
-        if ([string]::IsNullOrEmpty($pfxPassword)) {
-          Write-Host "Certificate password not configured. Skipping signing."
-          exit 0
-        }
-
-        # Dynamically locate signtool.exe
-        $signtool = $null
-        $windowsKitsPath = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
-        
-        if (Test-Path $windowsKitsPath) {
-          # Search for signtool.exe in SDK versions and architectures
-          $possiblePaths = @(
-            "x64\signtool.exe",
-            "x86\signtool.exe",
-            "arm64\signtool.exe"
-          )
-          
-          # Get all SDK version directories
-          $sdkVersions = Get-ChildItem -Path $windowsKitsPath -Directory -ErrorAction SilentlyContinue | 
-                         Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
-                         Sort-Object Name -Descending
-          
-          # Try versioned paths first (newer SDK installations)
-          foreach ($version in $sdkVersions) {
-            foreach ($arch in $possiblePaths) {
-              $testPath = Join-Path $version.FullName $arch
-              if (Test-Path $testPath) {
-                $signtool = $testPath
-                Write-Host "Found signtool.exe at: $signtool"
-                break
-              }
-            }
-            if ($signtool) { break }
-          }
-          
-          # Fallback to direct architecture paths (older SDK installations)
-          if (!$signtool) {
-            foreach ($arch in $possiblePaths) {
-              $testPath = Join-Path $windowsKitsPath $arch
-              if (Test-Path $testPath) {
-                $signtool = $testPath
-                Write-Host "Found signtool.exe at: $signtool"
-                break
-              }
-            }
-          }
-        }
-        
-        if (!$signtool -or !(Test-Path $signtool)) {
-          throw "signtool.exe not found. Please ensure Windows SDK is installed."
-        }
-
-        # Display certificate information for diagnostics
-        Write-Host "`n=== Certificate Information ==="
-        try {
-          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($env:PFX_PATH, $pfxPassword)
-          Write-Host "Certificate Subject: $($cert.Subject)"
-          Write-Host "Certificate Issuer: $($cert.Issuer)"
-          Write-Host "Certificate Thumbprint: $($cert.Thumbprint)"
-          Write-Host "Certificate Valid: $($cert.NotBefore) to $($cert.NotAfter)"
-        } catch {
-          Write-Host "Warning: Could not read certificate details: $_"
-        }
-        Write-Host "================================`n"
-
-        $targets = @()
-        if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages") {
-          $targets += Get-ChildItem "AutoRGBPrototype/AutoRGBPrototype (Package)/AppPackages" -Recurse -Filter *.msix -ErrorAction SilentlyContinue
-        }
-        if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}") {
-          $targets += Get-ChildItem "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}" -Recurse -Filter *.msix -ErrorAction SilentlyContinue
-        }
-
-        if ($targets.Count -eq 0) {
-          Write-Host "No .msix files found to sign."
-          exit 0
-        }
-
-        # Check manifest Publisher for the first package
-        $manifestPath = "AutoRGBPrototype/AutoRGBPrototype (Package)/Package.appxmanifest"
-        if (Test-Path $manifestPath) {
-          Write-Host "=== Manifest Publisher Information ==="
-          try {
-            [xml]$manifest = Get-Content $manifestPath
-            $publisher = $manifest.Package.Identity.Publisher
-            Write-Host "Manifest Publisher: $publisher"
-            Write-Host "Note: The certificate Subject must match the Manifest Publisher for signing to succeed."
-            Write-Host "======================================`n"
-          } catch {
-            Write-Host "Warning: Could not read manifest: $_`n"
-          }
-        }
-
-        foreach ($f in $targets) {
-          Write-Host "Signing $($f.FullName)"
-          & $signtool sign /fd SHA256 /f "$env:PFX_PATH" /p $pfxPassword /tr http://timestamp.digicert.com /td SHA256 "$($f.FullName)"
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "`n=== Signing Failed ==="
-            Write-Host "Error: signtool.exe returned exit code $LASTEXITCODE"
-            Write-Host ""
-            Write-Host "Common causes of signing failures (error 0x8007000b):"
-            Write-Host "1. Certificate Subject does not match the Publisher in Package.appxmanifest"
-            Write-Host "2. Certificate password is incorrect"
-            Write-Host "3. Certificate file is corrupted or invalid"
-            Write-Host "4. Certificate has expired or is not yet valid"
-            Write-Host ""
-            Write-Host "To fix:"
-            Write-Host "- Verify the certificate Subject matches the Publisher field in Package.appxmanifest"
-            Write-Host "- Check that WINDOWS_PFX_PASSWORD secret is correct"
-            Write-Host "- Ensure the certificate is valid and not expired"
-            Write-Host "========================`n"
-            throw "signtool failed for $($f.FullName)"
-          }
-        }
-        
-        Write-Host "All MSIX packages signed successfully."
-
+      run: msbuild ${{ env.SOLUTION_FILE_PATH }} /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform=${{ matrix.platform }} /p:AppxBundle=Never /p:UapAppxPackageBuildMode=SideloadOnly
+      
     - name: List build output
       shell: pwsh
       run: |
@@ -213,7 +73,7 @@ jobs:
         if (Test-Path "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}") {
           Get-ChildItem -Path "AutoRGBPrototype/AutoRGBPrototype (Package)/${{ matrix.platform }}" -Recurse | Select-Object FullName
         }
-
+      
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
