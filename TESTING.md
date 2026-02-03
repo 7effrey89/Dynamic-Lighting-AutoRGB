@@ -3,6 +3,33 @@
 ## Overview
 This implementation adds zone-based edge color capture with per-lamp control to the AutoRGB application. The app now samples colors from thin bands along screen edges and maps them to individual lamps on a selected LampArray device.
 
+## Zone Layout Visualization
+
+With default configuration (top=6, left=4, right=4, bottom=0):
+
+```
+Screen:
+┌───────────────────────────────────────────────────────┐
+│ [0]  [1]  [2]  [3]  [4]  [5]                          │  ← Top zones (0-5)
+│                                           [6]          │
+│                                           [7]          │  ← Right zones (6-9)
+│                                           [8]          │
+│                                           [9]          │
+│[13]                                                    │
+│[12]                                                    │  ← Left zones (10-13)
+│[11]                                                    │
+│[10]                                                    │
+└───────────────────────────────────────────────────────┘
+  (No bottom zones in default config)
+
+Zone Order: Clockwise from top-left
+- Top zones: 0-5 (left to right)
+- Right zones: 6-9 (top to bottom)
+- Left zones: 10-13 (bottom to top)
+```
+
+Edge thickness = 3% of screen dimension by default.
+
 ## Key Changes Summary
 
 ### New Files Added
