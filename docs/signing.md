@@ -218,7 +218,12 @@ Timestamp: CN=DigiCert Timestamp 2023, O=DigiCert, C=US
 
 ### Issue: signtool.exe not found in workflow
 
-**Solution:** The Windows SDK should be pre-installed on `windows-latest` runners. If this error occurs, contact GitHub support or verify the runner image version.
+**Solution:** The workflow now automatically searches for signtool.exe in multiple locations:
+- SDK version directories (e.g., `10.0.22621.0/x64/signtool.exe`) for newer installations
+- Direct architecture paths (e.g., `x64/signtool.exe`) for older installations
+- Multiple architectures (x64, x86, arm64) as fallbacks
+
+The Windows SDK should be pre-installed on `windows-latest` runners. If this error persists after the automatic search, verify the runner image has the Windows SDK installed.
 
 ## Security Best Practices
 
