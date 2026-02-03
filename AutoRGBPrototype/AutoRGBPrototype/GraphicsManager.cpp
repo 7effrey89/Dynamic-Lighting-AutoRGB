@@ -4,7 +4,6 @@
 #include "GraphicsManager.g.cpp"
 #endif
 
-#include "pch.h"
 #include "ColorShader.h"
 
 #include <ppltasks.h>
