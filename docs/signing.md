@@ -225,7 +225,7 @@ Timestamp: CN=DigiCert Timestamp 2023, O=DigiCert, C=US
 
 ## Additional Resources
 
-- [Windows App Certification Kit](https://docs.microsoft.com/windows/uwp/debug-test-perf/windows-app-certification-kit)
-- [Sign an app package using SignTool](https://docs.microsoft.com/windows/uwp/packaging/sign-app-package-using-signtool)
-- [Creating Certificates for Package Signing](https://docs.microsoft.com/windows/msix/package/create-certificate-package-signing)
+- [Windows App Certification Kit](https://learn.microsoft.com/windows/uwp/debug-test-perf/windows-app-certification-kit)
+- [Sign an app package using SignTool](https://learn.microsoft.com/windows/msix/package/sign-app-package-using-signtool)
+- [Creating Certificates for Package Signing](https://learn.microsoft.com/windows/msix/package/create-certificate-package-signing)
 - [GitHub Actions Encrypted Secrets](https://docs.github.com/actions/security-guides/encrypted-secrets)
