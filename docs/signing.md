@@ -116,11 +116,14 @@ Write-Host "Base64 string saved to Desktop\pfx_base64.txt"
 ### Step 3: Verify Workflow Configuration
 
 The workflow is automatically configured to:
+- Build MSIX packages unsigned (using `/p:AppxPackageSigningEnabled=false`)
 - Detect if secrets are present
-- Sign all `.msix` files if secrets are available
+- Sign all `.msix` files if secrets are available (post-build signing)
 - Export the public certificate (`.cer`) and include it in the artifacts
 - Skip signing with a clear message if secrets are not present
 - Use SHA256 digest algorithm and DigiCert timestamp server
+
+**Note:** Building packages unsigned and signing them post-build is the recommended approach for CI/CD pipelines, as it allows flexible certificate management without embedding certificates in the build process.
 
 ## Installing Signed MSIX Packages
 
@@ -224,6 +227,13 @@ Timestamp: CN=DigiCert Timestamp 2023, O=DigiCert, C=US
 - Multiple architectures (x64, x86, arm64) as fallbacks
 
 The Windows SDK should be pre-installed on `windows-latest` runners. If this error persists after the automatic search, verify the runner image has the Windows SDK installed.
+
+### Issue: SignerSign() failed with error 0x8007000b (ERROR_BAD_FORMAT)
+
+**Solution:** This error typically occurs when trying to sign a package that was already signed during the build or has conflicting signing metadata. The workflow now builds packages with `/p:AppxPackageSigningEnabled=false` to create truly unsigned packages that can be properly signed post-build. If you encounter this error:
+- Ensure your workflow uses the `AppxPackageSigningEnabled=false` MSBuild parameter
+- Verify the package is not being signed during the build process
+- Check that the certificate Subject matches the Publisher in `Package.appxmanifest` if you're using a custom certificate
 
 ## Security Best Practices
 
