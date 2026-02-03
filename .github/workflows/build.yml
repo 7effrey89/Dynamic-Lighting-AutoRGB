@@ -62,18 +62,35 @@ jobs:
 
     # --- NEW: Decode PFX from secrets ---
     - name: Prepare signing certificate
-      if: ${{ secrets.WINDOWS_PFX_BASE64 != '' }}
       shell: pwsh
       run: |
+        $pfxBase64 = "${{ secrets.WINDOWS_PFX_BASE64 }}"
+        if ([string]::IsNullOrEmpty($pfxBase64)) {
+          Write-Host "Certificate secrets not configured. Signing will be skipped."
+          exit 0
+        }
+        
         $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
-        [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String("${{ secrets.WINDOWS_PFX_BASE64 }}"))
+        [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($pfxBase64))
         "PFX_PATH=$pfxPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        Write-Host "Certificate prepared for signing."
 
     # --- NEW: Sign all MSIX files ---
     - name: Sign MSIX packages
-      if: ${{ env.PFX_PATH != '' }}
       shell: pwsh
       run: |
+        # Check if certificate was prepared
+        if ([string]::IsNullOrEmpty($env:PFX_PATH) -or !(Test-Path $env:PFX_PATH)) {
+          Write-Host "Certificate not available. Skipping signing."
+          exit 0
+        }
+        
+        $pfxPassword = "${{ secrets.WINDOWS_PFX_PASSWORD }}"
+        if ([string]::IsNullOrEmpty($pfxPassword)) {
+          Write-Host "Certificate password not configured. Skipping signing."
+          exit 0
+        }
+
         $signtool = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin\x64\signtool.exe"
         if (!(Test-Path $signtool)) { throw "signtool.exe not found at $signtool" }
 
@@ -92,9 +109,11 @@ jobs:
 
         foreach ($f in $targets) {
           Write-Host "Signing $($f.FullName)"
-          & $signtool sign /fd SHA256 /f "$env:PFX_PATH" /p "${{ secrets.WINDOWS_PFX_PASSWORD }}" /tr http://timestamp.digicert.com /td SHA256 "$($f.FullName)"
+          & $signtool sign /fd SHA256 /f "$env:PFX_PATH" /p $pfxPassword /tr http://timestamp.digicert.com /td SHA256 "$($f.FullName)"
           if ($LASTEXITCODE -ne 0) { throw "signtool failed for $($f.FullName)" }
         }
+        
+        Write-Host "All MSIX packages signed successfully."
 
     - name: List build output
       shell: pwsh
